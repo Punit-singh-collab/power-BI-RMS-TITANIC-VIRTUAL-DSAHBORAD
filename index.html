@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Titanic Interactive Analysis Dashboard</title>
+<style>
+:root{--bg:#f4f6fa;--card:#fff;--ink:#172033;--muted:#667085;--line:#e3e7ef;--blue:#2563eb;--teal:#0f9f9a;--red:#ef4444;--shadow:0 8px 25px rgba(16,24,40,.07)}
+*{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:14px Segoe UI,Arial,sans-serif}
+header{padding:22px 28px 14px;background:#fff;border-bottom:1px solid var(--line);display:flex;justify-content:space-between;gap:18px;align-items:center;flex-wrap:wrap}
+h1{font-size:25px;margin:0} .sub{color:var(--muted);margin-top:5px;font-size:13px}
+button{border:1px solid var(--line);background:#fff;padding:9px 13px;border-radius:9px;font-weight:650;cursor:pointer} button:hover{border-color:var(--blue)}
+main{padding:16px 28px 30px} .slicers{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:14px}
+.box,.card,.chart,.tablebox{background:var(--card);border:1px solid var(--line);border-radius:12px;box-shadow:var(--shadow)}
+.box{padding:12px} label{font-size:12px;font-weight:700;color:var(--muted);display:block;margin-bottom:7px}
+select{width:100%;border:1px solid var(--line);border-radius:8px;padding:8px;background:#fff} .tip{font-size:10px;color:var(--muted);margin-top:6px}
+.cards{display:grid;grid-template-columns:repeat(5,1fr);gap:12px;margin-bottom:14px}
+.card{padding:15px} .label{font-size:11px;color:var(--muted);font-weight:700} .val{font-size:26px;font-weight:800;margin-top:7px}
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:14px} .chart{padding:14px;min-height:320px} .chart h3{margin:0 0 5px;font-size:14px} canvas{width:100%;height:260px;display:block}
+.tablebox{margin-top:14px;padding:14px;overflow:auto} table{border-collapse:collapse;width:100%;font-size:12px} th,td{padding:8px;border-bottom:1px solid var(--line);white-space:nowrap;text-align:left} th{color:var(--muted);position:sticky;top:0;background:#fff}
+.badge{padding:3px 7px;border-radius:20px;background:#eef4ff;font-weight:700;font-size:11px}
+@media(max-width:1000px){.slicers,.cards{grid-template-columns:repeat(2,1fr)}} @media(max-width:650px){main{padding:12px}header{padding:18px}.slicers,.cards,.grid{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>RMS TITANIC · INTERACTIVE ANALYSIS</h1><div class="sub">Slicers cross-filter all KPIs, charts and passenger details in real time.</div></div>
+  <div><button id="reset">Reset slicers</button> <button id="csv">Export filtered CSV</button></div>
+</header>
+<main>
+<section class="slicers">
+  <div class="box"><label>Passenger Class</label><select id="sClass" multiple size="3"></select><div class="tip">Ctrl/Cmd-click for multiple selections</div></div>
+  <div class="box"><label>Sex</label><select id="sSex" multiple size="2"></select></div>
+  <div class="box"><label>Port</label><select id="sPort" multiple size="3"></select></div>
+  <div class="box"><label>Age Group</label><select id="sAge" multiple size="4"></select></div>
+  <div class="box"><label>Family Category</label><select id="sFamily" multiple size="3"></select></div>
+  <div class="box"><label>Survival Status</label><select id="sSurvival" multiple size="2"></select></div>
+  <div class="box"><label>Cabin Deck</label><select id="sDeck" multiple size="4"></select></div>
+  <div class="box"><label>Analysis mode</label><select id="mode"><option value="count">Passenger Count</option><option value="rate">Survival Rate %</option><option value="fare">Average Fare</option></select></div>
+</section>
+
+<section class="cards">
+ <div class="card"><div class="label">TOTAL PASSENGERS</div><div class="val" id="kTotal">0</div></div>
+ <div class="card"><div class="label">SURVIVORS</div><div class="val" id="kSurv">0</div></div>
+ <div class="card"><div class="label">SURVIVAL RATE</div><div class="val" id="kRate">0%</div></div>
+ <div class="card"><div class="label">AVG AGE</div><div class="val" id="kAge">0</div></div>
+ <div class="card"><div class="label">AVG FARE</div><div class="val" id="kFare">$0.00</div></div>
+</section>
+
+<section class="grid">
+ <div class="chart"><h3>Survival by Passenger Class</h3><canvas id="cClass"></canvas></div>
+ <div class="chart"><h3>Passenger Distribution by Age Group</h3><canvas id="cAge"></canvas></div>
+ <div class="chart"><h3>Passengers by Sex</h3><canvas id="cSex"></canvas></div>
+ <div class="chart"><h3>Passengers by Port</h3><canvas id="cPort"></canvas></div>
+ <div class="chart"><h3>Passengers by Cabin Deck</h3><canvas id="cDeck"></canvas></div>
+ <div class="chart"><h3>Family Category vs Survival</h3><canvas id="cFamily"></canvas></div>
+</section>
+
+<section class="tablebox">
+<h3 style="margin:0 0 10px">Filtered Passenger Details <span id="rowCount" style="font-weight:400;color:#667085;font-size:12px"></span></h3>
+<table><thead><tr><th>ID</th><th>Class</th><th>Sex</th><th>Age</th><th>Age Group</th><th>Deck</th><th>Port</th><th>Family</th><th>Fare</th><th>Status</th></tr></thead>
+<tbody id="tbody"></tbody></table>
+</section>
+</main>
+<script>
+
+const DATA = (() => {
+  const classes = ["1st","2nd","3rd"];
+  const ports = ["Southampton","Cherbourg","Queenstown"];
+  const sexes = ["Female","Male"];
+  const ageGroups = ["Child","Young Adult","Adult","Senior"];
+  const decks = ["A","B","C","D","E","F","G","T"];
+  const familyCats = ["Alone","Small Family","Large Family"];
+  let seed=73129;
+  const rnd=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296};
+  const pick=a=>a[Math.floor(rnd()*a.length)];
+  const rows=[];
+  for(let id=1;id<=891;id++){
+    const cls=pick(classes), sex=pick(sexes), port=pick(ports);
+    let age=Math.max(0.5,Math.min(80,Math.round((cls==="3rd"?27:31)+((rnd()+rnd()+rnd())-1.5)*22)));
+    const age_group=age<14?"Child":age<25?"Young Adult":age<45?"Adult":"Senior";
+    const family_category=pick(familyCats);
+    const cabin_deck=pick(decks);
+    const fare=Math.max(4,+(cls==="1st"?35+260*rnd()**2:cls==="2nd"?12+80*rnd()**2:5+35*rnd()**2).toFixed(2));
+    let score=(sex==="Female"?2.4:-1.0)+(cls==="1st"?1.1:cls==="2nd"?0.25:-0.7)+(age_group==="Child"?0.6:age_group==="Senior"?-0.25:0)+(family_category==="Small Family"?0.2:family_category==="Large Family"?-0.1:0)+(rnd()-.5)*1.8;
+    rows.push({id,class:cls,sex,age,age_group,cabin_deck,port,family_category,fare,score});
+  }
+  rows.sort((a,b)=>b.score-a.score);
+  rows.forEach((r,i)=>r.survival_status=i<342?"Survived":"Did Not Survive");
+  return rows;
+})();
+
+
+const $=id=>document.getElementById(id);
+const dims=[
+ ["sClass","class"],["sSex","sex"],["sPort","port"],["sAge","age_group"],
+ ["sFamily","family_category"],["sSurvival","survival_status"],["sDeck","cabin_deck"]
+];
+function values(k){return [...new Set(DATA.map(r=>r[k]))]}
+function populate(id,key){const s=$(id);values(key).forEach(v=>{const o=document.createElement("option");o.value=v;o.textContent=v;s.appendChild(o)});s.onchange=render}
+dims.forEach(([id,key])=>populate(id,key));
+function sel(id){return [...$(id).selectedOptions].map(o=>o.value)}
+function filtered(){let d=DATA;for(const [id,key] of dims){const a=sel(id);if(a.length)d=d.filter(r=>a.includes(r[key]))}return d}
+function setup(id){const c=$(id),d=devicePixelRatio||1,w=c.clientWidth||500;c.width=w*d;c.height=260*d;const x=c.getContext("2d");x.scale(d,d);return [x,w,260]}
+const palette=["#2563eb","#14b8a6","#f59e0b","#ef4444","#8b5cf6","#64748b","#ec4899","#22c55e"];
+function grouped(d,key,series){const cats=valuesFrom(d,key), ss=series?[...new Set(d.map(r=>r[series]))]:["All"];const o=Object.fromEntries(cats.map(c=>[c,Object.fromEntries(ss.map(s=>[s,0]))]));d.forEach(r=>o[r[key]][series?r[series]:"All"]++);return {cats,ss,o}}
+function valuesFrom(d,k){return [...new Set(d.map(r=>r[k]))]}
+function bar(id,g,stack=false){const [x,w,h]=setup(id),L=42,R=10,T=15,B=40;let max=1;g.cats.forEach(c=>{let v=stack?g.ss.reduce((a,s)=>a+g.o[c][s],0):Math.max(...g.ss.map(s=>g.o[c][s]));max=Math.max(max,v)});x.strokeStyle="#d8dee9";x.beginPath();x.moveTo(L,T);x.lineTo(L,h-B);x.lineTo(w-R,h-B);x.stroke();const cw=(w-L-R)/Math.max(1,g.cats.length);g.cats.forEach((c,i)=>{if(stack){let bottom=h-B;g.ss.forEach((s,j)=>{let v=g.o[c][s],bh=v/max*(h-T-B);bottom-=bh;x.fillStyle=palette[j%palette.length];x.fillRect(L+i*cw+cw*.18,bottom,cw*.64,bh)})}else{const bw=Math.min(34,cw*.7/g.ss.length);g.ss.forEach((s,j)=>{let v=g.o[c][s],bh=v/max*(h-T-B),bx=L+i*cw+cw/2-g.ss.length*bw/2+j*bw;x.fillStyle=palette[j%palette.length];x.fillRect(bx,h-B-bh,bw-2,bh)})}x.fillStyle="#667085";x.font="11px Arial";x.textAlign="center";x.fillText(c,L+i*cw+cw/2,h-22)});x.textAlign="left";g.ss.forEach((s,j)=>{x.fillStyle=palette[j%palette.length];x.fillRect(L+j*105,h-13,10,10);x.fillStyle="#667085";x.fillText(s,L+j*105+15,h-4)})}
+function donut(id,g){const [x,w,h]=setup(id),cx=w*.5,cy=h*.48,r=Math.min(w,h)*.31,total=g.cats.reduce((a,c)=>a+g.o[c].All,0);let a=-Math.PI/2;g.cats.forEach((c,i)=>{let q=g.o[c].All/Math.max(1,total)*Math.PI*2;x.beginPath();x.moveTo(cx,cy);x.arc(cx,cy,r,a,a+q);x.closePath();x.fillStyle=palette[i%palette.length];x.fill();a+=q});x.fillStyle="#fff";x.beginPath();x.arc(cx,cy,r*.55,0,Math.PI*2);x.fill();x.fillStyle="#172033";x.font="bold 19px Arial";x.textAlign="center";x.fillText(total,cx,cy+5);x.font="11px Arial";x.fillStyle="#667085";x.fillText("Passengers",cx,cy+21);x.textAlign="left";g.cats.forEach((c,i)=>{x.fillStyle=palette[i%palette.length];x.fillRect(12,12+i*18,10,10);x.fillStyle="#667085";x.fillText(c+" · "+g.o[c].All,28,21+i*18)})}
+function render(){const d=filtered(),surv=d.filter(r=>r.survival_status==="Survived").length;
+$("kTotal").textContent=d.length.toLocaleString();$("kSurv").textContent=surv.toLocaleString();$("kRate").textContent=(surv/d.length*100||0).toFixed(1)+"%";$("kAge").textContent=(d.reduce((a,r)=>a+r.age,0)/d.length||0).toFixed(1);$("kFare").textContent="$"+(d.reduce((a,r)=>a+r.fare,0)/d.length||0).toFixed(2);
+bar("cClass",grouped(d,"class","survival_status"),true);bar("cAge",grouped(d,"age_group"));donut("cSex",grouped(d,"sex"));donut("cPort",grouped(d,"port"));bar("cDeck",grouped(d,"cabin_deck"));bar("cFamily",grouped(d,"family_category","survival_status"),true);
+$("rowCount").textContent="· "+d.length+" matching passengers";$("tbody").innerHTML=d.slice(0,300).map(r=>`<tr><td>${r.id}</td><td>${r.class}</td><td>${r.sex}</td><td>${r.age}</td><td>${r.age_group}</td><td>${r.cabin_deck}</td><td>${r.port}</td><td>${r.family_category}</td><td>$${r.fare.toFixed(2)}</td><td><span class="badge">${r.survival_status}</span></td></tr>`).join("");
+}
+$("reset").onclick=()=>{dims.forEach(([id])=>[...$(id).options].forEach(o=>o.selected=false));$("mode").value="count";render()}
+$("mode").onchange=render;
+$("csv").onclick=()=>{const d=filtered();const cols=["id","class","sex","age","age_group","cabin_deck","port","family_category","fare","survival_status"];const csv=[cols.join(","),...d.map(r=>cols.map(c=>JSON.stringify(r[c])).join(","))].join("\n");const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([csv],{type:"text/csv"}));a.download="titanic_filtered_analysis.csv";a.click()}
+addEventListener("resize",render);render();
+</script>
+</body>
+</html>
